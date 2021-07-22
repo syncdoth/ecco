@@ -7,6 +7,10 @@ gpt2-medium:
     embedding: "transformer.wte.weight"
     activations:
     - 'mlp\.c_proj'
+gpt2-large:
+    embedding: "transformer.wte.weight"
+    activations:
+    - 'mlp\.c_proj'
 gpt2-xl:
     embedding: "transformer.wte.weight"
     activations:

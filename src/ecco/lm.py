@@ -36,15 +36,17 @@ class LM(object):
     ```
     """
 
-    def __init__(self,
-                 model: transformers.PreTrainedModel,
-                 tokenizer: transformers.PreTrainedTokenizerFast,
-                 model_name: str,
-                 collect_activations_flag: Optional[bool] = False,
-                 collect_activations_layer_nums: Optional[List[int]] = None,  # None --> collect for all layers
-                 verbose: Optional[bool] = True,
-                 gpu: Optional[bool] = True
-                 ):
+    def __init__(
+            self,
+            model: transformers.PreTrainedModel,
+            tokenizer: transformers.PreTrainedTokenizerFast,
+            model_name: str,
+            collect_activations_flag: Optional[bool] = False,
+            collect_activations_layer_nums: Optional[
+                List[int]] = None,  # None --> collect for all layers
+            target_neurons: Optional[dict] = None,
+            verbose: Optional[bool] = True,
+            gpu: Optional[bool] = True):
         """
         Creates an LM object given a model and tokenizer.
 
@@ -55,6 +57,8 @@ class LM(object):
             collect_activations_flag: True if we want to collect activations
             collect_activations_layer_nums: If collecting activations, we can use this parameter to indicate which layers
                 to track. By default this would be None and we'd collect activations for all layers.
+            target_neurons: dictionary of target neurons. The keys are named as: `{layer_n}-{layer_sig}` and
+                the values are np.array.
             verbose: If True, model.generate() displays output tokens in HTML as they're generated.
             gpu: Set to False to force using the CPU even if a GPU exists.
         """
@@ -70,7 +74,6 @@ class LM(object):
         self.tokenizer = tokenizer
         self.verbose = verbose
         self._path = os.path.dirname(ecco.__file__)
-
 
         # Neuron Activation
         self.collect_activations_flag = collect_activations_flag
@@ -89,9 +92,19 @@ class LM(object):
             self.collect_activations_layer_name_sig = self.model_config['activations'][0]
         except KeyError:
             raise ValueError(
-                   f"The model '{self.model_name}' is not defined in Ecco's 'model-config.yaml' file and"
-                   f" so is not explicitly supported yet. Supported models are:",
-                   list(configs.keys())) from KeyError()
+                f"The model '{self.model_name}' is not defined in Ecco's 'model-config.yaml' file and"
+                f" so is not explicitly supported yet. Supported models are:",
+                list(configs.keys())) from KeyError()
+
+        self.target_neurons = None
+        if target_neurons is not None:
+            self.collect_activations_layer_nums = []
+            self.target_neurons = {}
+            for key in target_neurons:
+                layer_n, layer_sig = key.split('-')
+                self.collect_activations_layer_nums.append(int(layer_n))
+                if re.search(self.collect_activations_layer_name_sig, layer_sig):
+                    self.target_neurons[layer_n] = target_neurons[key]
 
         self._hooks = {}
         self._reset()
@@ -114,14 +127,16 @@ class LM(object):
             return tensor.to('cuda')
         return tensor
 
-    def _generate_token(self, input_ids, past, do_sample: bool, temperature: float, top_k: int, top_p: float,
-                        attribution_flag: Optional[bool]):
+    def _generate_token(self, input_ids, past, do_sample: bool, temperature: float,
+                        top_k: int, top_p: float, attribution_flag: Optional[bool]):
         """
         Run a forward pass through the model and sample a token.
         """
         inputs_embeds, token_ids_tensor_one_hot = self._get_embeddings(input_ids)
 
-        output = self.model(inputs_embeds=inputs_embeds, return_dict=True, use_cache=False)
+        output = self.model(inputs_embeds=inputs_embeds,
+                            return_dict=True,
+                            use_cache=False)
         predict = output.logits
 
         scores = predict[-1:, :]
@@ -134,15 +149,19 @@ class LM(object):
         prediction_logit = predict[inputs_embeds.shape[0] - 1][prediction_id]
 
         if attribution_flag:
-            saliency_results = compute_saliency_scores(prediction_logit, token_ids_tensor_one_hot, inputs_embeds)
+            saliency_results = compute_saliency_scores(prediction_logit,
+                                                       token_ids_tensor_one_hot,
+                                                       inputs_embeds)
 
             if 'gradient' not in self.attributions:
                 self.attributions['gradient'] = []
-            self.attributions['gradient'].append(saliency_results['gradient'].cpu().detach().numpy())
+            self.attributions['gradient'].append(
+                saliency_results['gradient'].cpu().detach().numpy())
 
             if 'grad_x_input' not in self.attributions:
                 self.attributions['grad_x_input'] = []
-            self.attributions['grad_x_input'].append(saliency_results['grad_x_input'].cpu().detach().numpy())
+            self.attributions['grad_x_input'].append(
+                saliency_results['grad_x_input'].cpu().detach().numpy())
 
         output['logits'] = None  # free tensor memory we won't use again
 
@@ -152,8 +171,10 @@ class LM(object):
             hs_list = []
             for idx, layer_hs in enumerate(output.hidden_states):
                 # in Hugging Face Transformers v4, there's an extra index for batch
-                if len(layer_hs.shape) == 3:  # If there's a batch dimension, pick the first oen
-                    hs = layer_hs.cpu().detach()[0].unsqueeze(0)  # Adding a dimension to concat to later
+                if len(layer_hs.shape
+                      ) == 3:  # If there's a batch dimension, pick the first oen
+                    hs = layer_hs.cpu().detach()[0].unsqueeze(
+                        0)  # Adding a dimension to concat to later
                 # Earlier versions are only 2 dimensional
                 # But also, in v4, for GPT2, all except the last one would have 3 dims, the last layer
                 # would only have two dims
@@ -166,7 +187,8 @@ class LM(object):
 
         return prediction_id, output
 
-    def generate(self, input_str: str,
+    def generate(self,
+                 input_str: str,
                  max_length: Optional[int] = 8,
                  temperature: Optional[float] = None,
                  top_k: Optional[int] = None,
@@ -195,8 +217,8 @@ class LM(object):
         top_k = top_k if top_k is not None else self.model.config.top_k
         top_p = top_p if top_p is not None else self.model.config.top_p
         temperature = temperature if temperature is not None else self.model.config.temperature
-        do_sample = do_sample if do_sample is not None else self.model.config.task_specific_params['text-generation'][
-            'do_sample']
+        do_sample = do_sample if do_sample is not None else self.model.config.task_specific_params[
+            'text-generation']['do_sample']
 
         # We needs this as a batch in order to collect activations.
         input_ids = self.tokenizer(input_str, return_tensors="pt")['input_ids'][0]
@@ -220,22 +242,22 @@ class LM(object):
             viz_id = self.display_input_sequence(input_ids)
 
         while cur_len < max_length:
-            output_token_id, output = self._generate_token(input_ids,
-                                                           past,
-                                                           # Note, this is not currently used
-                                                           temperature=temperature,
-                                                           top_k=top_k, top_p=top_p,
-                                                           do_sample=do_sample,
-                                                           attribution_flag=attribution)
+            output_token_id, output = self._generate_token(
+                input_ids,
+                past,
+                # Note, this is not currently used
+                temperature=temperature,
+                top_k=top_k,
+                top_p=top_p,
+                do_sample=do_sample,
+                attribution_flag=attribution)
 
             if get_model_output:
                 outputs.append(output)
             input_ids = torch.cat([input_ids, torch.tensor([output_token_id])])
 
             if self.verbose:
-                self.display_token(viz_id,
-                                   output_token_id.cpu().numpy(),
-                                   cur_len)
+                self.display_token(viz_id, output_token_id.cpu().numpy(), cur_len)
             cur_len = cur_len + 1
 
             if output_token_id == self.model.config.eos_token_id:
@@ -255,25 +277,29 @@ class LM(object):
 
         attributions = self.attributions
         attn = getattr(output, "attentions", None)
-        return OutputSeq(**{'tokenizer': self.tokenizer,
-                            'token_ids': input_ids.unsqueeze(0), # Add a batch dimension
-                            'n_input_tokens': n_input_tokens,
-                            'output_text': self.tokenizer.decode(input_ids),
-                            'tokens': [tokens], # Add a batch dimension
-                            'hidden_states': hidden_states,
-                            'attention': attn,
-                            'model_outputs': outputs,
-                            'attribution': attributions,
-                            'activations': self.activations,
-                            'collect_activations_layer_nums': self.collect_activations_layer_nums,
-                            'lm_head': self.model.lm_head,
-                            'device': self.device})
+        return OutputSeq(
+            **{
+                'tokenizer': self.tokenizer,
+                'token_ids': input_ids.unsqueeze(0),  # Add a batch dimension
+                'n_input_tokens': n_input_tokens,
+                'output_text': self.tokenizer.decode(input_ids),
+                'tokens': [tokens],  # Add a batch dimension
+                'hidden_states': hidden_states,
+                'attention': attn,
+                'model_outputs': outputs,
+                'attribution': attributions,
+                'activations': self.activations,
+                'collect_activations_layer_nums': self.collect_activations_layer_nums,
+                'lm_head': self.model.lm_head,
+                'device': self.device
+            })
 
-    def __call__(self,
-                 # input_str: Optional[str] = '',
-                 input_tokens: torch.Tensor,
-                 # attribution: Optional[bool] = True,
-                 ):
+    def __call__(
+        self,
+        # input_str: Optional[str] = '',
+        input_tokens: torch.Tensor,
+        # attribution: Optional[bool] = True,
+    ):
         """
         Run a forward pass through the model. For when we don't care about output tokens.
         Currently only support activations collection. No attribution/saliency.
@@ -294,12 +320,14 @@ class LM(object):
         """
 
         if not hasattr(input_tokens, 'input_ids'):
-            raise ValueError("Parameter 'input_tokens' needs to have the attribute 'input_ids'."
-                             "Verify it was produced by the appropriate tokenizer with the "
-                             "parameter return_tensors=\"pt\".")
+            raise ValueError(
+                "Parameter 'input_tokens' needs to have the attribute 'input_ids'."
+                "Verify it was produced by the appropriate tokenizer with the "
+                "parameter return_tensors=\"pt\".")
 
         # Move inputs to GPU if the model is on GPU
-        if self.model.device.type == "cuda" and input_tokens['input_ids'].device.type == "cpu":
+        if self.model.device.type == "cuda" and input_tokens[
+                'input_ids'].device.type == "cpu":
             input_tokens = self.to(input_tokens)
 
         # Remove downstream. For now setting to batch length
@@ -328,19 +356,22 @@ class LM(object):
             tokens.append(token)
 
         attn = getattr(output, "attentions", None)
-        return OutputSeq(**{'tokenizer': self.tokenizer,
-                            'token_ids': input_tokens['input_ids'],
-                            'n_input_tokens': n_input_tokens,
-                            # 'output_text': self.tokenizer.decode(input_ids),
-                            'tokens': tokens,
-                            'hidden_states': hidden_states,
-                            'attention': attn,
-                            # 'model_outputs': outputs,
-                            # 'attribution': attributions,
-                            'activations': self.activations,
-                            'collect_activations_layer_nums': self.collect_activations_layer_nums,
-                            'lm_head': lm_head,
-                            'device': self.device})
+        return OutputSeq(
+            **{
+                'tokenizer': self.tokenizer,
+                'token_ids': input_tokens['input_ids'],
+                'n_input_tokens': n_input_tokens,
+                # 'output_text': self.tokenizer.decode(input_ids),
+                'tokens': tokens,
+                'hidden_states': hidden_states,
+                'attention': attn,
+                # 'model_outputs': outputs,
+                # 'attribution': attributions,
+                'activations': self.activations,
+                'collect_activations_layer_nums': self.collect_activations_layer_nums,
+                'lm_head': lm_head,
+                'device': self.device
+            })
 
     def _get_embeddings(self, input_ids):
         """
@@ -366,8 +397,8 @@ class LM(object):
                 # print("mlp.c_proj", self.collect_activations_flag , name)
                 if self.collect_activations_flag:
                     self._hooks[name] = module.register_forward_hook(
-                        lambda self_, input_, output,
-                               name=name: self._get_activations_hook(name, input_))
+                        lambda self_, input_, output, name=name: self.
+                        _get_activations_hook(name, input_))
 
                 # Register neuron inhibition hook
                 self._hooks[name + '_inhibit'] = module.register_forward_pre_hook(
@@ -399,7 +430,7 @@ class LM(object):
         # print("layer number: ", layer_number)
 
         collecting_this_layer = (self.collect_activations_layer_nums is None) or (
-                layer_number in self.collect_activations_layer_nums)
+            layer_number in self.collect_activations_layer_nums)
 
         if collecting_this_layer:
             # Initialize the layer's key the first time we encounter it
@@ -412,6 +443,9 @@ class LM(object):
             # Assuming all input tokens are presented as input, no "past"
             # The inputs to c_proj already pass through the gelu activation function
             self._all_activations_dict[layer_number] = input_[0].detach().cpu().numpy()
+            if self.target_neurons is not None:
+                self._all_activations_dict[layer_number] = self._all_activations_dict[
+                    layer_number][:, :, self.target_neurons[layer_number]]
 
     def _inhibit_neurons_hook(self, name: str, input_tensor):
         """
@@ -432,7 +466,8 @@ class LM(object):
 
             for n in self.neurons_to_induce[layer_number]:
                 # print('inhibiting', layer_number, n)
-                input_tensor[0][0][-1][n] = input_tensor[0][0][-1][n] * 10  # tuple, batch, position
+                input_tensor[0][0][-1][
+                    n] = input_tensor[0][0][-1][n] * 10  # tuple, batch, position
 
         return input_tensor
 
@@ -441,10 +476,12 @@ class LM(object):
         tokens = []
         for idx, token_id in enumerate(input_ids):
             type = "input"
-            tokens.append({'token': self.tokenizer.decode([token_id]),
-                           'position': idx,
-                           'token_id': int(token_id),
-                           'type': type})
+            tokens.append({
+                'token': self.tokenizer.decode([token_id]),
+                'position': idx,
+                'token_id': int(token_id),
+                'type': type
+            })
         data = {'tokens': tokens}
 
         d.display(d.HTML(filename=os.path.join(self._path, "html", "setup.html")))
@@ -503,11 +540,12 @@ class LM(object):
         prediction_data = []
         for idx, (token, prob) in enumerate(zip(tokens, probs)):
             # print(idx, token, prob)
-            prediction_data.append({'token': token,
-                                    'prob': str(prob),
-                                    'ranking': idx + 1,
-                                    'token_id': str(sorted_predictions[idx])
-                                    })
+            prediction_data.append({
+                'token': token,
+                'prob': str(prob),
+                'ranking': idx + 1,
+                'token_id': str(sorted_predictions[idx])
+            })
 
         params = prediction_data
 
