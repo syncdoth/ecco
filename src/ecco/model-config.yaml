@@ -10,7 +10,11 @@ gpt2-medium:
 gpt2-large:
     embedding: "transformer.wte.weight"
     activations:
+    - 'attn\.c_attn'
+    - 'attn\.c_proj'
+    - 'mlp\.c_fc'
     - 'mlp\.c_proj'
+    - 'lm_head'
 gpt2-xl:
     embedding: "transformer.wte.weight"
     activations:

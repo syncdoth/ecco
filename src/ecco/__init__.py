@@ -23,6 +23,7 @@ def from_pretrained(hf_model_id: str,
                     attention: Optional[bool] = False,
                     hidden_states: Optional[bool] = True,
                     activations_layer_nums: Optional[List[int]] = None,
+                    target_neurons: Optional[dict] = None,
                     verbose: Optional[bool] = True,
                     gpu: Optional[bool] = True
                     ):
@@ -43,6 +44,8 @@ Args:
     hidden_states: if True, collect hidden states. Needed for layer_predictions and rankings().
     activations_layer_nums: If we are collecting activations, we can specify which layers to track. This is None by
         default and all layer are collected if 'activations' is set to True.
+    target_neurons: dictionary of target neurons. The keys are named as: `{layer_n}-{layer_sig}` and
+        the values are np.array.
     verbose: If True, model.generate() displays output tokens in HTML as they're generated.
     gpu: Set to False to force using the CPU even if a GPU exists.
 """
@@ -63,6 +66,7 @@ Args:
         'model_name': hf_model_id,
         'collect_activations_flag': activations,
         'collect_activations_layer_nums': activations_layer_nums,
+        'target_neurons': target_neurons,
         'verbose': verbose,
         'gpu': gpu}
     lm = LM(model, tokenizer, **lm_kwargs)
