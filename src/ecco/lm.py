@@ -89,7 +89,7 @@ class LM(object):
             embeddings_layer_name = self.model_config['embedding']
             embed_retriever = attrgetter(embeddings_layer_name)
             self.model_embeddings = embed_retriever(self.model)
-            self.collect_activations_layer_name_sig = self.model_config['activations'][0]
+            self.collect_activations_layer_name_sig = self.model_config['activations']
         except KeyError:
             raise ValueError(
                 f"The model '{self.model_name}' is not defined in Ecco's 'model-config.yaml' file and"
@@ -101,11 +101,10 @@ class LM(object):
             self.collect_activations_layer_nums = []
             self.target_neurons = {}
             for key in target_neurons:
-                layer_n, layer_sig = key.split('-')
-                self.collect_activations_layer_nums.append(int(layer_n))
-                if re.search(self.collect_activations_layer_name_sig, layer_sig):
-                    self.target_neurons[layer_n] = target_neurons[key]
-
+                for collect_sig in self.collect_activations_layer_name_sig:
+                    if re.search(collect_sig, key):
+                        self.target_neurons[key] = target_neurons[key]
+                        self.collect_activations_layer_nums.append(key)
         self._hooks = {}
         self._reset()
         self._attach_hooks(self.model)
@@ -392,21 +391,20 @@ class LM(object):
     def _attach_hooks(self, model):
         for name, module in model.named_modules():
             # Add hooks to capture activations in every FFNN
+            for collect_layer_sig in self.collect_activations_layer_name_sig:
+                if re.search(collect_layer_sig, name):
+                    if self.collect_activations_flag:
+                        self._hooks[name] = module.register_forward_hook(
+                            lambda self_, input_, output, name=name: self.
+                            _get_activations_hook(name, input_, output))
 
-            if re.search(self.collect_activations_layer_name_sig, name):
-                # print("mlp.c_proj", self.collect_activations_flag , name)
-                if self.collect_activations_flag:
-                    self._hooks[name] = module.register_forward_hook(
-                        lambda self_, input_, output, name=name: self.
-                        _get_activations_hook(name, input_))
+                    # Register neuron inhibition hook
+                    # self._hooks[name + '_inhibit'] = module.register_forward_pre_hook(
+                    #     lambda self_, input_, name=name: \
+                    #         self._inhibit_neurons_hook(name, input_)
+                    # )
 
-                # Register neuron inhibition hook
-                self._hooks[name + '_inhibit'] = module.register_forward_pre_hook(
-                    lambda self_, input_, name=name: \
-                        self._inhibit_neurons_hook(name, input_)
-                )
-
-    def _get_activations_hook(self, name: str, input_):
+    def _get_activations_hook(self, name: str, input_, output):
         """
         Collects the activation for all tokens (input and output).
         The default activations collection method.
@@ -426,8 +424,14 @@ class LM(object):
         # (?<=\.) means look for a period before the int
         # \d+ means look for one or multiple digits
         # (?=\.) means look for a period after the int
-        layer_number = re.search("(?<=\.)\d+(?=\.)", name).group(0)
-        # print("layer number: ", layer_number)
+        if name == 'lm_head':
+            layer_number = name
+        else:
+            # NOTE: this is only for gpt2!
+            layer_number = name.replace('transformer.h.', '')
+            layer_number = layer_number.replace('.', '-', 1)
+            # layer_number = re.search("(?<=\.)\d+(?=\.)", name).group(0)
+            # print("layer number: ", layer_number)
 
         collecting_this_layer = (self.collect_activations_layer_nums is None) or (
             layer_number in self.collect_activations_layer_nums)
@@ -441,8 +445,13 @@ class LM(object):
             # For LM, we could be running multiple inference stesp with generate(). In that case,
             # overwrite the previous step activations. This collects all activations in the last step
             # Assuming all input tokens are presented as input, no "past"
+
             # The inputs to c_proj already pass through the gelu activation function
-            self._all_activations_dict[layer_number] = input_[0].detach().cpu().numpy()
+            # NOTE: in the original repo, it is input_. But I used output instead.
+            # self._all_activations_dict[layer_number] = input_[0].detach().cpu().numpy()
+            if len(output.shape) == 2:
+                output = output.unsqueeze(0)
+            self._all_activations_dict[layer_number] = output.detach().cpu().numpy()
             if self.target_neurons is not None:
                 self._all_activations_dict[layer_number] = self._all_activations_dict[
                     layer_number][:, :, self.target_neurons[layer_number]]
@@ -602,7 +611,14 @@ def activations_dict_to_array(activations_dict):
     for i in sorted(activations_dict.keys()):
         activations.append(activations_dict[i])
 
-    activations = np.array(activations)
+    if not all([activations[0].shape == act for act in activations]):
+        # the shapes are non-uniform
+        # (batch, position, all_neurons)
+        activations = np.concatenate(activations, axis=-1)
+        activations = np.swapaxes(activations, 1, 2)  # (batch, all_neurons, position)
+        return activations
+    else:
+        activations = np.array(activations)
     # 'activations' now is in the shape (layer, batch, position, neurons)
 
     activations = np.swapaxes(activations, 2, 3)

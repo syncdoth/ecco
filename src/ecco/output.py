@@ -41,6 +41,7 @@ class OutputSeq:
 
 
     """
+
     def __init__(self,
                  token_ids=None,
                  n_input_tokens=None,
@@ -93,7 +94,8 @@ class OutputSeq:
         self._path = os.path.dirname(ecco.__file__)
 
     def __str__(self):
-        return "<LMOutput '{}' # of lm outputs: {}>".format(self.output_text, len(self.hidden_states))
+        return "<LMOutput '{}' # of lm outputs: {}>".format(self.output_text,
+                                                            len(self.hidden_states))
 
     def to(self, tensor: torch.Tensor):
         if self.device == 'cuda':
@@ -106,14 +108,13 @@ class OutputSeq:
         for idx, token in enumerate(self.tokens[0]):
             type = "input" if idx < self.n_input_tokens else 'output'
 
-            tokens.append({'token': token,
-                           'token_id': int(self.token_ids[0][idx]),
-                           'type': type
-                           })
+            tokens.append({
+                'token': token,
+                'token_id': int(self.token_ids[0][idx]),
+                'type': type
+            })
 
-        data = {
-            'tokens': tokens
-        }
+        data = {'tokens': tokens}
 
         d.display(d.HTML(filename=os.path.join(self._path, "html", "setup.html")))
         d.display(d.HTML(filename=os.path.join(self._path, "html", "basic.html")))
@@ -142,9 +143,11 @@ class OutputSeq:
     def position(self, position, attr_method='grad_x_input'):
 
         if (position < self.n_input_tokens) or (position > len(self.tokens) - 1):
-            raise ValueError("'position' should indicate a position of a generated token. "
-                             "Accepted values for this sequence are between {} and {}."
-                             .format(self.n_input_tokens, len(self.tokens) - 1))
+            raise ValueError(
+                "'position' should indicate a position of a generated token. "
+                "Accepted values for this sequence are between {} and {}.".format(
+                    self.n_input_tokens,
+                    len(self.tokens) - 1))
 
         importance_id = position - self.n_input_tokens
         tokens = []
@@ -156,15 +159,15 @@ class OutputSeq:
             else:
                 imp = -1
 
-            tokens.append({'token': token,
-                           'token_id': int(self.token_ids[idx]),
-                           'type': type,
-                           'value': str(imp)  # because json complains of floats
-                           })
+            tokens.append({
+                'token': token,
+                'token_id': int(self.token_ids[idx]),
+                'type': type,
+                'value':
+                    str(imp)  # because json complains of floats
+            })
 
-        data = {
-            'tokens': tokens
-        }
+        data = {'tokens': tokens}
 
         d.display(d.HTML(filename=os.path.join(self._path, "html", "setup.html")))
         d.display(d.HTML(filename=os.path.join(self._path, "html", "basic.html")))
@@ -179,44 +182,47 @@ class OutputSeq:
         }})""".format(position, data)
         d.display(d.Javascript(js))
 
-    def saliency(self, attr_method: Optional[str] = 'grad_x_input', style="minimal", **kwargs):
+    def saliency(self,
+                 attr_method: Optional[str] = 'grad_x_input',
+                 style="minimal",
+                 **kwargs):
         """
-Explorable showing saliency of each token generation step.
-Hovering-over or tapping an output token imposes a saliency map on other tokens
-showing their importance as features to that prediction.
+        Explorable showing saliency of each token generation step.
+        Hovering-over or tapping an output token imposes a saliency map on other tokens
+        showing their importance as features to that prediction.
 
-Examples:
+        Examples:
 
-```python
-import ecco
-lm = ecco.from_pretrained('distilgpt2')
-text= "The countries of the European Union are:\n1. Austria\n2. Belgium\n3. Bulgaria\n4."
-output = lm.generate(text, generate=20, do_sample=True)
+        ```python
+        import ecco
+        lm = ecco.from_pretrained('distilgpt2')
+        text= "The countries of the European Union are:\n1. Austria\n2. Belgium\n3. Bulgaria\n4."
+        output = lm.generate(text, generate=20, do_sample=True)
 
-# Show saliency explorable
-output.saliency()
-```
+        # Show saliency explorable
+        output.saliency()
+        ```
 
-Which creates the following interactive explorable:
-![input saliency example 1](../../img/saliency_ex_1.png)
+        Which creates the following interactive explorable:
+        ![input saliency example 1](../../img/saliency_ex_1.png)
 
-If we want more details on the saliency values, we can use the detailed view:
+        If we want more details on the saliency values, we can use the detailed view:
 
-```python
-# Show detailed explorable
-output.saliency(style="detailed")
-```
+        ```python
+        # Show detailed explorable
+        output.saliency(style="detailed")
+        ```
 
-Which creates the following interactive explorable:
+        Which creates the following interactive explorable:
 
-![input saliency example 2 - detailed](../../img/saliency_ex_2.png)
+        ![input saliency example 2 - detailed](../../img/saliency_ex_2.png)
 
 
-Details:
-This view shows the Gradient * Inputs method of input saliency. The attribution values are calculated across the
-embedding dimensions, then we use the L2 norm to calculate a score for each token (from the values of its embeddings dimension)
-To get a percentage value, we normalize the scores by dividing by the sum of the attribution scores for all
-the tokens in the sequence.
+        Details:
+        This view shows the Gradient * Inputs method of input saliency. The attribution values are calculated across the
+        embedding dimensions, then we use the L2 norm to calculate a score for each token (from the values of its embeddings dimension)
+        To get a percentage value, we normalize the scores by dividing by the sum of the attribution scores for all
+        the tokens in the sequence.
         """
         position = self.n_input_tokens
 
@@ -230,18 +236,18 @@ the tokens in the sequence.
             else:
                 imp = 0
 
-            tokens.append({'token': token,
-                           'token_id': int(self.token_ids[0][idx]),
-                           'type': type,
-                           'value': str(imp),  # because json complains of floats
-                           'position': idx
-                           })
+            tokens.append({
+                'token': token,
+                'token_id': int(self.token_ids[0][idx]),
+                'type': type,
+                'value': str(imp),  # because json complains of floats
+                'position': idx
+            })
 
-        data = {
-            'tokens': tokens,
-            'attributions': [att.tolist() for att in attribution]
-        }
+        data = {'tokens': tokens, 'attributions': [att.tolist() for att in attribution]}
 
+        if 'quiet' in kwargs and kwargs['quiet']:
+            return data
         d.display(d.HTML(filename=os.path.join(self._path, "html", "setup.html")))
         d.display(d.HTML(filename=os.path.join(self._path, "html", "basic.html")))
         # viz_id = 'viz_{}'.format(round(random.random() * 1000000))
@@ -278,7 +284,7 @@ the tokens in the sequence.
 
         if 'printJson' in kwargs and kwargs['printJson']:
             print(data)
-            return data
+        return data
 
     def _repr_html_(self, **kwargs):
         # if util.type_of_script() == "jupyter":
@@ -298,7 +304,11 @@ the tokens in the sequence.
     #         # print(i.numpy())
     #         plt.show()
 
-    def layer_predictions(self, position: int = 1, topk: Optional[int] = 10, layer: Optional[int] = None, **kwargs):
+    def layer_predictions(self,
+                          position: int = 1,
+                          topk: Optional[int] = 10,
+                          layer: Optional[int] = None,
+                          **kwargs):
         """
         Visualization plotting the topk predicted tokens after each layer (using its hidden state).
 
@@ -314,8 +324,10 @@ the tokens in the sequence.
         hidden_states = self.hidden_states
 
         if position == 0:
-            raise ValueError(f"'position' is set to 0. There is never a hidden state associated with this position."
-                             f"Possible values are 1 and above -- the position of the token of interest in the sequence")
+            raise ValueError(
+                f"'position' is set to 0. There is never a hidden state associated with this position."
+                f"Possible values are 1 and above -- the position of the token of interest in the sequence"
+            )
         # watch = self.to(torch.tensor([self.token_ids[self.n_input_tokens]]))
         # There is one lm output per generated token. To get the index
         output_index = position - self.n_input_tokens
@@ -341,7 +353,8 @@ the tokens in the sequence.
             # Not currently used. If we're "watching" a specific token, this gets its ranking
             # idx = sorted_softmax.shape[0] - torch.nonzero((sorted_softmax == watch)).flatten()
 
-            layer_top_tokens = [self.tokenizer.decode(t) for t in sorted_softmax[-k:]][::-1]
+            layer_top_tokens = [self.tokenizer.decode(t) for t in sorted_softmax[-k:]
+                               ][::-1]
             top_tokens.append(layer_top_tokens)
             layer_probs = softmax[sorted_softmax[-k:]].cpu().detach().numpy()[::-1]
             probs.append(layer_probs.tolist())
@@ -351,11 +364,12 @@ the tokens in the sequence.
             for idx, (token, prob) in enumerate(zip(layer_top_tokens, layer_probs)):
                 # print(layer_no, idx, token)
                 layer_num = layer if layer is not None else layer_no
-                layer_data.append({'token': token,
-                                   'prob': str(prob),
-                                   'ranking': idx + 1,
-                                   'layer': layer_num
-                                   })
+                layer_data.append({
+                    'token': token,
+                    'prob': str(prob),
+                    'ranking': idx + 1,
+                    'layer': layer_num
+                })
 
             data.append(layer_data)
 
@@ -423,16 +437,16 @@ the tokens in the sequence.
 
         input_tokens = [repr(t) for t in self.tokens[0][self.n_input_tokens - 1:-1]]
         output_tokens = [repr(t) for t in self.tokens[0][self.n_input_tokens:]]
-        lm_plots.plot_inner_token_rankings(input_tokens,
-                                           output_tokens,
-                                           rankings,
+        lm_plots.plot_inner_token_rankings(input_tokens, output_tokens, rankings,
                                            **kwargs)
 
         if 'printJson' in kwargs and kwargs['printJson']:
-            data = {'input_tokens': input_tokens,
-                    'output_tokens': output_tokens,
-                    'rankings': rankings,
-                    'predicted_tokens': predicted_tokens}
+            data = {
+                'input_tokens': input_tokens,
+                'output_tokens': output_tokens,
+                'rankings': rankings,
+                'predicted_tokens': predicted_tokens
+            }
             print(data)
             return data
 
@@ -474,14 +488,14 @@ the tokens in the sequence.
         input_tokens = [t for t in self.tokens[0]]
         output_tokens = [repr(self.tokenizer.decode(t)) for t in watch]
 
-        lm_plots.plot_inner_token_rankings_watch(input_tokens,
-                                                 output_tokens,
-                                                 rankings)
+        lm_plots.plot_inner_token_rankings_watch(input_tokens, output_tokens, rankings)
 
         if 'printJson' in kwargs and kwargs['printJson']:
-            data = {'input_tokens': input_tokens,
-                    'output_tokens': output_tokens,
-                    'rankings': rankings}
+            data = {
+                'input_tokens': input_tokens,
+                'output_tokens': output_tokens,
+                'rankings': rankings
+            }
             print(data)
             return data
 
@@ -508,12 +522,13 @@ the tokens in the sequence.
             else:
                 attention_value = 0
 
-            tokens.append({'token': token,
-                           'token_id': int(self.token_ids[idx]),
-                           'type': type,
-                           'value': str(attention_value),  # because json complains of floats
-                           'position': idx
-                           })
+            tokens.append({
+                'token': token,
+                'token_id': int(self.token_ids[idx]),
+                'type': type,
+                'value': str(attention_value),  # because json complains of floats
+                'position': idx
+            })
 
         data = {
             'tokens': tokens,
@@ -551,19 +566,22 @@ the tokens in the sequence.
                    collect_activations_layer_nums=self.collect_activations_layer_nums,
                    **kwargs)
 
+
 class NMF:
     """ Conducts NMF and holds the models and components """
 
-    def __init__(self, activations: np.ndarray,
-                 n_input_tokens: int = 0,
-                 token_ids: torch.Tensor = torch.Tensor(0),
-                 _path: str = '',
-                 n_components: int = 10,
-                 # from_layer: Optional[int] = None,
-                 # to_layer: Optional[int] = None,
-                 tokens: Optional[List[str]] = None,
-                 collect_activations_layer_nums: Optional[List[int]] = None,
-                 **kwargs):
+    def __init__(
+            self,
+            activations: np.ndarray,
+            n_input_tokens: int = 0,
+            token_ids: torch.Tensor = torch.Tensor(0),
+            _path: str = '',
+            n_components: int = 10,
+            # from_layer: Optional[int] = None,
+            # to_layer: Optional[int] = None,
+            tokens: Optional[List[str]] = None,
+            collect_activations_layer_nums: Optional[List[int]] = None,
+            **kwargs):
         """
         Receives a neuron activations tensor from OutputSeq and decomposes it using NMF into the number
         of components specified by `n_components`. For example, a model like `distilgpt2` has 18,000+
@@ -582,8 +600,9 @@ class NMF:
             """
 
         if activations == []:
-            raise ValueError(f"No activation data found. Make sure 'activations=True' was passed to "
-                             f"ecco.from_pretrained().")
+            raise ValueError(
+                f"No activation data found. Make sure 'activations=True' was passed to "
+                f"ecco.from_pretrained().")
 
         self._path = _path
         self.token_ids = token_ids
@@ -591,11 +610,14 @@ class NMF:
 
         from_layer = kwargs['from_layer'] if 'from_layer' in kwargs else None
         to_layer = kwargs['to_layer'] if 'to_layer' in kwargs else None
+        self.use_nmf = kwargs['use_nmf'] if 'use_nmf' in kwargs else True
 
-        merged_act = self.reshape_activations(activations,
-                                              from_layer,
-                                              to_layer,
-                                              collect_activations_layer_nums)
+        if len(activations.shape) == 3:
+            merged_act = activations.swapaxes(0, 1)
+            merged_act = merged_act.reshape(merged_act.shape[0], -1)
+        else:
+            merged_act = self.reshape_activations(activations, from_layer, to_layer,
+                                                  collect_activations_layer_nums)
         # 'merged_act' is now ( neuron (and layer), position (and batch) )
 
         activations = merged_act
@@ -610,18 +632,25 @@ class NMF:
 
         # Get rid of negative activation values
         # (There are some, because GPT2 uses GELU, which allow small negative values)
-        self.activations = np.maximum(activations, 0).T
+        if self.use_nmf:
+            self.activations = np.maximum(activations, 0).T
 
-        self.model = decomposition.NMF(n_components=n_components,
-                                  init='random',
-                                  random_state=0,
-                                  max_iter=500)
-        self.components = self.model.fit_transform(self.activations).T
-
+            self.model = decomposition.NMF(n_components=n_components,
+                                           init='random',
+                                           random_state=0,
+                                           max_iter=500)
+            self.components = self.model.fit_transform(self.activations).T
+        else:
+            assert 'rank_metric_arr' in kwargs and kwargs['rank_metric_arr'] is not None, \
+                'if use_nmf=False, rank_metric_arr must be provided.'
+            rank_metric_arr = kwargs['rank_metric_arr']
+            assert rank_metric_arr.shape[0] == activations.shape[0]
+            self.activations = activations
+            top_indices = np.argsort(rank_metric_arr)[:n_components]
+            self.components = self.activations[top_indices, :]
 
     @staticmethod
-    def reshape_activations(activations,
-                            from_layer: Optional[int],
+    def reshape_activations(activations, from_layer: Optional[int],
                             to_layer: Optional[int],
                             collect_activations_layer_nums: Optional[List[int]]):
         """Prepares the activations tensor for NMF by reshaping it from four dimensions
@@ -638,26 +667,32 @@ class NMF:
         """
 
         if len(activations.shape) != 4:
-            raise ValueError(f"The 'activations' parameter should have four dimensions: "
-                             f"(batch, layers, neurons, positions). "
-                             f"Supplied dimensions: {activations.shape}", 'activations')
+            raise ValueError(
+                f"The 'activations' parameter should have four dimensions: "
+                f"(batch, layers, neurons, positions). "
+                f"Supplied dimensions: {activations.shape}", 'activations')
 
         if collect_activations_layer_nums is None:
             collect_activations_layer_nums = list(range(activations.shape[1]))
 
-        layer_nums_to_row_ixs = {layer_num: i
-                                 for i, layer_num in enumerate(collect_activations_layer_nums)}
+        layer_nums_to_row_ixs = {
+            layer_num: i for i, layer_num in enumerate(collect_activations_layer_nums)
+        }
 
         if from_layer is not None or to_layer is not None:
             from_layer = from_layer if from_layer is not None else 0
             to_layer = to_layer if to_layer is not None else activations.shape[0]
 
             if from_layer == to_layer:
-                raise ValueError(f"from_layer ({from_layer}) and to_layer ({to_layer}) cannot be the same value. "
-                                 "They must be apart by at least one to allow for a layer of activations.")
+                raise ValueError(
+                    f"from_layer ({from_layer}) and to_layer ({to_layer}) cannot be the same value. "
+                    "They must be apart by at least one to allow for a layer of activations."
+                )
 
             if from_layer > to_layer:
-                raise ValueError(f"from_layer ({from_layer}) cannot be larger than to_layer ({to_layer}).")
+                raise ValueError(
+                    f"from_layer ({from_layer}) cannot be larger than to_layer ({to_layer})."
+                )
 
             layer_nums = list(range(from_layer, to_layer))
         else:
@@ -665,8 +700,10 @@ class NMF:
 
         if any([num not in layer_nums_to_row_ixs for num in layer_nums]):
             available = sorted(layer_nums_to_row_ixs.keys())
-            raise ValueError(f"Not all layers between from_layer ({from_layer}) and to_layer ({to_layer}) "
-                             f"have recorded activations. Layers with recorded activations are: {available}")
+            raise ValueError(
+                f"Not all layers between from_layer ({from_layer}) and to_layer ({to_layer}) "
+                f"have recorded activations. Layers with recorded activations are: {available}"
+            )
         row_ixs = [layer_nums_to_row_ixs[layer_num] for layer_num in layer_nums]
         activation_rows = [activations[:, row_ix] for row_ix in row_ixs]
         # Merge 'layers' and 'neuron' dimensions. Sending activations down from
@@ -694,13 +731,14 @@ class NMF:
 
         for idx, token in enumerate(self.tokens[input_sequence]):  # self.tokens[:-1]
             type = "input" if idx < self.n_input_tokens else 'output'
-            tokens.append({'token': token,
-                           'token_id': int(self.token_ids[input_sequence][idx]),
-                           # 'token_id': int(self.token_ids[idx]),
-                           'type': type,
-                           # 'value': str(components[0][comp_num][idx]),  # because json complains of floats
-                           'position': idx
-                           })
+            tokens.append({
+                'token': token,
+                'token_id': int(self.token_ids[input_sequence][idx]),
+                # 'token_id': int(self.token_ids[idx]),
+                'type': type,
+                # 'value': str(components[0][comp_num][idx]),  # because json complains of floats
+                'position': idx
+            })
 
         # If the sequence contains both input and generated tokens:
         # Duplicate the factor at index 'n_input_tokens'. THis way
@@ -709,13 +747,17 @@ class NMF:
         # For outputs, the activation is a cause
         if len(self.token_ids[input_sequence]) != self.n_input_tokens:
             # Case: Generation. Duplicate value of last input token.
-            factors = np.array(
-                [np.concatenate([comp[:self.n_input_tokens], comp[self.n_input_tokens - 1:]]) for comp in
-                  self.components])
-            factors = [comp.tolist() for comp in factors]  # the json conversion needs this
+            factors = np.array([
+                np.concatenate(
+                    [comp[:self.n_input_tokens], comp[self.n_input_tokens - 1:]])
+                for comp in self.components
+            ])
+            factors = [comp.tolist() for comp in factors
+                      ]  # the json conversion needs this
         else:
             # Case: no generation
-            factors = [comp.tolist() for comp in self.components]  # the json conversion needs this
+            factors = [comp.tolist() for comp in self.components
+                      ]  # the json conversion needs this
 
         data = {
             # A list of dicts. Each in the shape {
@@ -742,8 +784,6 @@ class NMF:
             print(data)
             return data
 
-
-
     def plot(self, n_components=3):
 
         for idx, comp in enumerate(self.components):
@@ -761,7 +801,8 @@ class NMF:
             ax1.plot(comp)
             ax1.set_xticks(range(len(self.tokens)))
             ax1.set_xticklabels(self.tokens, rotation=-90)
-            ax1.legend(['Component {}'.format(i + 1) for i in range(n_components)], loc='center left',
+            ax1.legend(['Component {}'.format(i + 1) for i in range(n_components)],
+                       loc='center left',
                        bbox_to_anchor=(1.01, 0.5))
 
             plt.show()
